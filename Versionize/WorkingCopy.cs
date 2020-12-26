@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Linq;
 using LibGit2Sharp;
@@ -20,7 +20,8 @@ namespace Versionize
             bool skipCommit = false,
             string releaseVersion = null,
             bool ignoreInsignificant = false, 
-            bool includeAllCommitsInChangelog = false)
+            bool includeAllCommitsInChangelog = false,
+            VersionSource versionSource = VersionSource.Default)
         {
             var workingDirectory = _directory.FullName;
 
@@ -59,11 +60,15 @@ namespace Versionize
 
                 var versionIncrement = VersionIncrementStrategy.CreateFrom(conventionalCommits);
 
-                var nextVersion = versionTag == null ? projects.Version : versionIncrement.NextVersion(projects.Version, ignoreInsignificant);
+                var nextVersion = GetNextVersion(versionSource, versionTag, projects.Version, versionIncrement, ignoreInsignificant);
 
-                if (ignoreInsignificant && nextVersion == projects.Version)
+                if (ignoreInsignificant && versionSource != VersionSource.Csproj && nextVersion == projects.Version)
                 {
                     Exit($"Version was not affected by commits since last release ({projects.Version}), since you specified to ignore insignificant changes, no action will be performed.", 0);
+                }
+                if (versionSource == VersionSource.Csproj && repo.Tags.Select(t => t.FriendlyName).Contains($"v{ nextVersion }"))
+                {
+                    Exit($"The next version {nextVersion} has been tagged already.", 0);
                 }
 
                 if (!string.IsNullOrWhiteSpace(releaseVersion))
@@ -137,6 +142,27 @@ namespace Versionize
 
                 return nextVersion;
             }
+        }
+
+        public static System.Version GetNextVersion(
+            VersionSource versionSource,
+            Tag gitTag,
+            System.Version csprojVersion,
+            VersionIncrementStrategy strategy,
+            bool ignoreInsignificant)
+        {
+            var nextVersion = null as System.Version;
+            switch(versionSource)
+            {
+                case VersionSource.Default:
+                case VersionSource.GitTag:
+                    nextVersion = gitTag == null ? csprojVersion : strategy.NextVersion(csprojVersion, ignoreInsignificant);
+                    break;
+                case VersionSource.Csproj:
+                    nextVersion = strategy.NextVersion(csprojVersion, ignoreInsignificant);
+                    break;
+            }
+            return nextVersion;
         }
 
         public static WorkingCopy Discover(string workingDirectory)

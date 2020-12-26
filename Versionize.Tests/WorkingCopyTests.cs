@@ -147,6 +147,73 @@ namespace Versionize.Tests
             lastCommit.ShouldBe(_testSetup.Repository.Head.Tip);
         }
 
+        [Theory]
+        [InlineData(VersionSource.Default, "1.0.0", "v1.0.0", "1.0.1")]
+        [InlineData(VersionSource.GitTag, "1.0.0", "v1.0.0", "1.0.1")]
+        [InlineData(VersionSource.Csproj, "1.0.0", "v1.0.0", "1.0.1")]
+        [InlineData(VersionSource.Default, "1.0.0", "v0.0.9", "1.0.0")]
+        [InlineData(VersionSource.GitTag, "1.0.0", "v0.0.9", "1.0.0")]
+        [InlineData(VersionSource.Csproj, "1.0.0", "v0.0.9", "1.0.1")]
+        [InlineData(VersionSource.Default, "1.0.0", "", "1.0.0")]
+        [InlineData(VersionSource.GitTag, "1.0.0", "", "1.0.0")]
+        [InlineData(VersionSource.Csproj, "1.0.0", "", "1.0.1")]
+        public void ShouldGetNextVersionBasedOnCsproj(
+            VersionSource versionSource,
+            string initialCsprojVersion,
+            string gitTag,
+            string expectedCsprojVersion)
+        {
+            TempCsProject.Create(_testSetup.WorkingDirectory, initialCsprojVersion);
+            CommitAll(_testSetup.Repository, "fix: commit some fix");
+            if (!string.IsNullOrWhiteSpace(gitTag))
+            {
+                _testSetup.Repository.ApplyTag(gitTag);
+            }
+
+            var workingCopy = WorkingCopy.Discover(_testSetup.WorkingDirectory);
+            workingCopy.Versionize(versionSource: versionSource, skipDirtyCheck: true);
+            var projects = Projects.Discover(_testSetup.WorkingDirectory);
+            Assert.Equal(expectedCsprojVersion, projects.Version.ToString());
+        }
+
+        public static TheoryData<VersionSource, string, string, string> NextVersionInvalidData => new TheoryData<VersionSource, string, string, string> {
+            {
+                VersionSource.Default,
+                "1.0.0",
+                "v0.0.9",
+                $"Version was not affected by commits since last release (1.0.0), since you specified to ignore insignificant changes, no action will be performed."
+            },
+            {
+                VersionSource.GitTag,
+                "1.0.0",
+                "v0.0.9",
+                $"Version was not affected by commits since last release (1.0.0), since you specified to ignore insignificant changes, no action will be performed."
+            },
+            {
+                VersionSource.Csproj,
+                "1.0.0",
+                "v1.0.1",
+                $"The next version 1.0.1 has been tagged already."
+            }
+        };
+
+        [Theory]
+        [MemberData(nameof(NextVersionInvalidData))]
+        public void ShouldExistWhenNextVersionInvalid(
+            VersionSource versionSource,
+            string initialCsprojVersion,
+            string gitTag,
+            string errorMessage)
+        {
+            TempCsProject.Create(_testSetup.WorkingDirectory, initialCsprojVersion);
+            CommitAll(_testSetup.Repository, "fix: commit some fix");
+            _testSetup.Repository.ApplyTag(gitTag);
+
+            var workingCopy = WorkingCopy.Discover(_testSetup.WorkingDirectory);
+            Should.Throw<CommandLineExitException>(() => workingCopy.Versionize(versionSource: versionSource, skipDirtyCheck: true, ignoreInsignificant: true));
+            _testPlatformAbstractions.Messages[2].ShouldBe(errorMessage);
+        }
+
         public void Dispose()
         {
             _testSetup.Dispose();

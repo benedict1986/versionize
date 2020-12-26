@@ -1,5 +1,6 @@
-using System;
+﻿using System;
 using System.ComponentModel.DataAnnotations;
+using System.Drawing;
 using System.IO;
 using System.Reflection;
 using McMaster.Extensions.CommandLineUtils;
@@ -24,6 +25,7 @@ namespace Versionize
             var optionSkipDirty = app.Option("--skip-dirty", "Skip git dirty check", CommandOptionType.NoValue);
             var optionReleaseAs = app.Option("-r|--release-as <VERSION>", "Specify the release version manually", CommandOptionType.SingleValue);
             var optionSilent = app.Option("--silent", "Suppress output to console", CommandOptionType.NoValue);
+            var optionVersionSource = app.Option("--version-source", "Set the source of the version. Currently it supports Default, GitTag and Csproj (case insensitive)", CommandOptionType.SingleValue);
 
             var optionSkipCommit = app.Option("--skip-commit", "Skip commit and git tag after updating changelog and incrementing the version", CommandOptionType.NoValue);
             var optionIgnoreInsignificant = app.Option("-i|--ignore-insignificant-commits", "Do not bump the version if no significant commits (fix, feat or BREAKING) are found", CommandOptionType.NoValue);
@@ -32,6 +34,7 @@ namespace Versionize
             app.OnExecute(() =>
             {
                 CommandLineUI.Verbosity = optionSilent.HasValue() ? LogLevel.Silent : LogLevel.All;
+                var versionSource = ConvertVersionSource(optionVersionSource.Value());
 
                 WorkingCopy
                     .Discover(optionWorkingDirectory.Value() ?? Directory.GetCurrentDirectory())
@@ -41,7 +44,8 @@ namespace Versionize
                         skipCommit: optionSkipCommit.HasValue(),
                         releaseVersion: optionReleaseAs.Value(),
                         ignoreInsignificant: optionIgnoreInsignificant.HasValue(),
-                        includeAllCommitsInChangelog: optionIncludeAllCommitsInChangelog.HasValue()
+                        includeAllCommitsInChangelog: optionIncludeAllCommitsInChangelog.HasValue(),
+                        versionSource: versionSource
                     );
 
                 return 0;
@@ -51,5 +55,22 @@ namespace Versionize
         }
 
         static string GetVersion() => typeof(Program).Assembly.GetName().Version.ToString();
+
+        public static VersionSource ConvertVersionSource(string inputVersionSource)
+        {
+            if (string.IsNullOrWhiteSpace(inputVersionSource))
+            {
+                return VersionSource.Default;
+            }
+            else if (Enum.TryParse<VersionSource>(inputVersionSource, true, out VersionSource versionSource))
+            {
+                return (VersionSource)versionSource;
+            }
+            else
+            {
+                CommandLineUI.Platform.WriteLine("Selected version source is not supported. Default value will be used", Color.Orange);
+                return VersionSource.Default;
+            }
+        }
     }
 }
